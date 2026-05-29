@@ -69,13 +69,12 @@ int main() {
             TensorHandle z3 = relu(l3, ctx);
 
             TensorHandle l4 = addition(
-                mmul(z3, w3, ctx), 
+                mmul(z3, w3, ctx),
                 broadcast(b3, batch_size, ctx), 
                 ctx
             );
-            TensorHandle z4 = relu(l4, ctx);
 
-            TensorHandle p = softmax(z4, ctx);
+            TensorHandle p = softmax(l4, ctx);
             TensorHandle loss = cross_entropy(p, data_slices[it_ind].second, ctx);
 
             TensorHandle mean_loss = mean(loss, ctx);

@@ -1,7 +1,7 @@
 #include "tensor_priv.hpp"
 #include <vector>
 #include <cstdlib>
-#include <iostream>
+#include <cstring>
 
 TensorHandle tensor_zeroes(const std::vector<size_t> &dims, bool learnable) {
     size_t num_elems = 1;

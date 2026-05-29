@@ -6,6 +6,7 @@
 #include <cmath>
 #include <iostream>
 #include <optional>
+#include <cstring>
 
 // TODO: need bias vectors
 struct ComputationContext {
