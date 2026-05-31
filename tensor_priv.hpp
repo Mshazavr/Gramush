@@ -3,9 +3,10 @@
 #include "tensor.hpp"
 
 struct Tensor {
-    const std::vector<size_t> dims; 
-    const std::vector<size_t> strides; 
-    float *const data;
-    float *const grads;
-    const bool learnable; 
+    size_t num_dims;
+    size_t *dims;
+    size_t *strides;
+    float *data;
+    float *grads;
+    bool learnable; 
 };

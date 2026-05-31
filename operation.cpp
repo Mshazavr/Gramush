@@ -7,8 +7,8 @@
 #include <iostream>
 #include <optional>
 #include <cstring>
+#include "arena.hpp"
 
-// TODO: need bias vectors
 struct ComputationContext {
     std::vector<OperationType> operation_nodes;
 
@@ -19,9 +19,7 @@ struct ComputationContext {
 
 
 ComputationContextHandle init_computation_context() {
-    ComputationContextHandle result = new ComputationContext {
-        {}, {}, {}, {}
-    };
+    ComputationContextHandle result = new ComputationContext();
     return result;
 }
 void computation_context_clear(ComputationContextHandle ctx) {
@@ -36,7 +34,7 @@ void computation_context_free(ComputationContextHandle ctx) {
 
 void update_context_new_op(
     ComputationContextHandle ctx, 
-    const std::vector<TensorHandle> &inputs, 
+    std::initializer_list<TensorHandle> inputs, 
     OperationType opnode_t, 
     TensorHandle output
 ) {
@@ -49,18 +47,19 @@ void update_context_new_op(
     }
 }
 
-TensorHandle mmul(TensorHandle left, TensorHandle right, ComputationContextHandle ctx) {
+TensorHandle mmul(TensorHandle left, TensorHandle right, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
     // TODO: add dimension validation
-    std::vector<size_t> result_dims = left->dims;
-    size_t num_dims = result_dims.size();
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * left->num_dims, alignof(size_t));
+    memcpy(result_dims, left->dims, sizeof(size_t) * (left->num_dims - 2));
+    size_t num_dims = left->num_dims;
     result_dims[num_dims - 2] = left->dims[num_dims - 2];
     result_dims[num_dims - 1] = right->dims[num_dims - 1];
-    TensorHandle result = tensor_zeroes(result_dims, false);
+    TensorHandle result = tensor_zeroes(num_dims, result_dims, false, arena);
 
     size_t num_sub_tensors = tensor_num_sub_tensors(left, 2);
-    size_t n = left->dims[left->dims.size() - 2];
-    size_t m = left->dims[left->dims.size() - 1];
-    size_t k = right->dims[right->dims.size() - 1];
+    size_t n = left->dims[left->num_dims - 2];
+    size_t m = left->dims[left->num_dims - 1];
+    size_t k = right->dims[right->num_dims - 1];
 
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
@@ -81,9 +80,9 @@ TensorHandle mmul(TensorHandle left, TensorHandle right, ComputationContextHandl
 }
 void mmul_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
     size_t num_sub_tensors = tensor_num_sub_tensors(left, 2);
-    size_t n = left->dims[left->dims.size() - 2];
-    size_t m = left->dims[left->dims.size() - 1];
-    size_t k = right->dims[right->dims.size() - 1];
+    size_t n = left->dims[left->num_dims - 2];
+    size_t m = left->dims[left->num_dims - 1];
+    size_t k = right->dims[right->num_dims - 1];
 
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
@@ -106,8 +105,10 @@ void mmul_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
     }
 }
 
-TensorHandle relu(TensorHandle input, ComputationContextHandle ctx) {
-    TensorHandle result = tensor_zeroes(input->dims, false);
+TensorHandle relu(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * input->num_dims, alignof(size_t));
+    memcpy(result_dims, input->dims, sizeof(size_t) * input->num_dims);
+    TensorHandle result = tensor_zeroes(input->num_dims, result_dims, false, arena);
     size_t n = tensor_size(result);
 
     for (size_t i = 0; i < n; ++i) {
@@ -128,10 +129,12 @@ void relu_backward(TensorHandle input, TensorHandle out) {
     }
 }
 
-TensorHandle softmax(TensorHandle input, ComputationContextHandle ctx) {
-    TensorHandle result = tensor_zeroes(input->dims, false);
+TensorHandle softmax(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * input->num_dims, alignof(size_t));
+    memcpy(result_dims, input->dims, sizeof(size_t) * input->num_dims);
+    TensorHandle result = tensor_zeroes(input->num_dims, result_dims, false, arena);
     size_t num_sub_tensors = tensor_num_sub_tensors(input, 1);
-    size_t n = result->dims[result->dims.size() - 1];
+    size_t n = result->dims[result->num_dims - 1];
 
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         float denominator = 0;
@@ -150,7 +153,7 @@ TensorHandle softmax(TensorHandle input, ComputationContextHandle ctx) {
 }
 void softmax_backward(TensorHandle input, TensorHandle out) {
     size_t num_sub_tensors = tensor_num_sub_tensors(input, 1);
-    size_t n = out->dims[out->dims.size() - 1];
+    size_t n = out->dims[out->num_dims - 1];
 
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
@@ -172,15 +175,13 @@ void softmax_backward(TensorHandle input, TensorHandle out) {
     }
 }
 
-TensorHandle cross_entropy(TensorHandle left, TensorHandle right, ComputationContextHandle ctx) {
-    std::vector<size_t> result_dims = std::vector<size_t>(left->dims.size() - 1);
-    for(size_t i = 0; i < result_dims.size(); ++i) {
-        result_dims[i] = left->dims[i];
-    }
-    TensorHandle result = tensor_zeroes(result_dims, false);
+TensorHandle cross_entropy(TensorHandle left, TensorHandle right, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (left->num_dims - 1), alignof(size_t));
+    memcpy(result_dims, left->dims, sizeof(size_t) * (left->num_dims - 1));
+    TensorHandle result = tensor_zeroes(left->num_dims - 1, result_dims, false, arena);
 
     size_t num_sub_tensors = tensor_size(result);
-    size_t n = left->dims[left->dims.size() - 1];
+    size_t n = left->dims[left->num_dims - 1];
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             if (right->data[sub_tensor_ind * n + i] == 1.0) {
@@ -195,7 +196,7 @@ TensorHandle cross_entropy(TensorHandle left, TensorHandle right, ComputationCon
 }
 void cross_entropy_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
     size_t num_sub_tensors = tensor_size(out);
-    size_t n = left->dims[left->dims.size() - 1];
+    size_t n = left->dims[left->num_dims - 1];
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             if (right->data[sub_tensor_ind * n + i] == 1.0) {
@@ -207,15 +208,13 @@ void cross_entropy_backward(TensorHandle left, TensorHandle right, TensorHandle 
     }
 }
 
-TensorHandle mean(TensorHandle input, ComputationContextHandle ctx) {
-    std::vector<size_t> result_dims = std::vector<size_t>(input->dims.size() - 1);
-    for(size_t i = 0; i < result_dims.size(); ++i) {
-        result_dims[i] = input->dims[i];
-    }
-    TensorHandle result = tensor_zeroes(result_dims, false);
+TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (input->num_dims - 1), alignof(size_t));
+    memcpy(result_dims, input->dims, sizeof(size_t) * (input->num_dims - 1));
+    TensorHandle result = tensor_zeroes(input->num_dims - 1, result_dims, false, arena);
 
     size_t num_sub_tensors = tensor_size(result);
-    size_t n = input->dims[input->dims.size() - 1];
+    size_t n = input->dims[input->num_dims - 1];
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             result->data[sub_tensor_ind] += input->data[sub_tensor_ind * n + i];
@@ -229,7 +228,7 @@ TensorHandle mean(TensorHandle input, ComputationContextHandle ctx) {
 }
 void mean_backward(TensorHandle input, TensorHandle out) {
     size_t num_sub_tensors = tensor_size(out);
-    size_t n = input->dims[input->dims.size() - 1];
+    size_t n = input->dims[input->num_dims - 1];
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             input->grads[sub_tensor_ind * n + i] += out->grads[sub_tensor_ind] / (float)n;
@@ -238,8 +237,10 @@ void mean_backward(TensorHandle input, TensorHandle out) {
 }
 
 
-TensorHandle addition(TensorHandle left, TensorHandle right, ComputationContextHandle ctx) {
-    TensorHandle result = tensor_zeroes(left->dims, false);
+TensorHandle addition(TensorHandle left, TensorHandle right, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * left->num_dims, alignof(size_t));
+    memcpy(result_dims, left->dims, sizeof(size_t) * left->num_dims);
+    TensorHandle result = tensor_zeroes(left->num_dims, result_dims, false, arena);
     size_t n = tensor_size(result);
     for (size_t i = 0; i < n; ++i) {
         result->data[i] = left->data[i] + right->data[i];
@@ -257,13 +258,11 @@ void addition_backward(TensorHandle left, TensorHandle right, TensorHandle out) 
     }
 }
 
-TensorHandle broadcast(TensorHandle input, size_t n, ComputationContextHandle ctx) {
-    std::vector<size_t> result_dims = std::vector<size_t>(input->dims.size() + 1);
+TensorHandle broadcast(TensorHandle input, size_t n, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (input->num_dims + 1), alignof(size_t));
     result_dims[0] = n;
-    for(size_t i = 1; i < result_dims.size(); ++i) {
-        result_dims[i] = input->dims[i - 1];
-    }
-    TensorHandle result = tensor_zeroes(result_dims, false);
+    memcpy(result_dims + 1, input->dims, sizeof(size_t) * input->num_dims);
+    TensorHandle result = tensor_zeroes(input->num_dims + 1, result_dims, false, arena);
 
     size_t input_size = tensor_size(input);
     for (size_t i = 0; i < n; ++i) {
@@ -350,8 +349,6 @@ void backward(TensorHandle tensor, ComputationContextHandle ctx) {
                 tensor_queue.push(in_tensor);
             }
         }
-
-        tensor_free(current_tensor);
     }
 }
 
