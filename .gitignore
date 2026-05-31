@@ -1,4 +1,5 @@
 *.o
 mshon
 **/.DS_Store
+.vscode/
 

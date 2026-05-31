@@ -43,18 +43,18 @@ int main() {
     data_slices.reserve(num_iterations);
     for (size_t i = 0; i < num_iterations; ++i) {
         data_slices.push_back({
-            tensor_from_data({batch_size, input_size}, false, full_data.images_train.data() + (i * batch_size * input_size), persistent_tensors_arena),
-            tensor_from_data({batch_size, num_labels}, false, full_data.labels_train.data() + (i * batch_size * num_labels), persistent_tensors_arena)
+            tensor_from_data(DType::FLOAT32, {batch_size, input_size}, false, full_data.images_train.data() + (i * batch_size * input_size), persistent_tensors_arena),
+            tensor_from_data(DType::FLOAT32, {batch_size, num_labels}, false, full_data.labels_train.data() + (i * batch_size * num_labels), persistent_tensors_arena)
         });
     }
 
     // Learnable tensors
-    TensorHandle w1 = tensor_random({input_size, 300}, true, persistent_tensors_arena);
-    TensorHandle b1 = tensor_random({300}, true, persistent_tensors_arena);
-    TensorHandle w2 = tensor_random({300, 100}, true, persistent_tensors_arena);
-    TensorHandle b2 = tensor_random({100}, true, persistent_tensors_arena);
-    TensorHandle w3 = tensor_random({100, num_labels}, true, persistent_tensors_arena);
-    TensorHandle b3 = tensor_random({num_labels}, true, persistent_tensors_arena);
+    TensorHandle w1 = tensor_random(DType::FLOAT32, {input_size, 300}, true, persistent_tensors_arena);
+    TensorHandle b1 = tensor_random(DType::FLOAT32, {300}, true, persistent_tensors_arena);
+    TensorHandle w2 = tensor_random(DType::FLOAT32, {300, 100}, true, persistent_tensors_arena);
+    TensorHandle b2 = tensor_random(DType::FLOAT32, {100}, true, persistent_tensors_arena);
+    TensorHandle w3 = tensor_random(DType::FLOAT32, {100, num_labels}, true, persistent_tensors_arena);
+    TensorHandle b3 = tensor_random(DType::FLOAT32, {num_labels}, true, persistent_tensors_arena);
 
     std::vector<TensorHandle> learnable_tensors = {w1, b1, w2, b2, w3, b3};
     

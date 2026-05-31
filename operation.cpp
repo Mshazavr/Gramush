@@ -54,20 +54,23 @@ TensorHandle mmul(TensorHandle left, TensorHandle right, ArenaAllocatorHandle ar
     size_t num_dims = left->num_dims;
     result_dims[num_dims - 2] = left->dims[num_dims - 2];
     result_dims[num_dims - 1] = right->dims[num_dims - 1];
-    TensorHandle result = tensor_zeroes(num_dims, result_dims, false, arena);
+    TensorHandle result = tensor_zeroes(left->dtype, num_dims, result_dims, false, arena);
 
     size_t num_sub_tensors = tensor_num_sub_tensors(left, 2);
     size_t n = left->dims[left->num_dims - 2];
     size_t m = left->dims[left->num_dims - 1];
     size_t k = right->dims[right->num_dims - 1];
 
+    float *left_data = (float*)left->data;
+    float *right_data = (float*)right->data;
+    float *result_data = (float*)result->data;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             for (size_t j = 0; j < k; ++j) {
                 for (size_t l = 0; l < m; ++l) {
-                    result->data[sub_tensor_ind * n * k + i * k + j] += (
-                        left->data[sub_tensor_ind * n * m + i * m + l] * 
-                        right->data[sub_tensor_ind * m * k + l * k + j]
+                    result_data[sub_tensor_ind * n * k + i * k + j] += (
+                        left_data[sub_tensor_ind * n * m + i * m + l] * 
+                        right_data[sub_tensor_ind * m * k + l * k + j]
                     );
                 }
             }
@@ -84,20 +87,25 @@ void mmul_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
     size_t m = left->dims[left->num_dims - 1];
     size_t k = right->dims[right->num_dims - 1];
 
+    float *left_data = (float*)left->data;
+    float *right_data = (float*)right->data;
+    float *left_grads = (float*)left->grads;
+    float *right_grads = (float*)right->grads;
+    float *out_grads = (float*)out->grads;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             for (size_t j = 0; j < k; ++j) {
                 for (size_t l = 0; l < m; ++l) {
                     // G_left += G_out * R^T
-                    left->grads[sub_tensor_ind * n * m + i * m + l] += (
-                        out->grads[sub_tensor_ind * n * k + i * k + j] *
-                        right->data[sub_tensor_ind * m * k + l * k + j]
+                    left_grads[sub_tensor_ind * n * m + i * m + l] += (
+                        out_grads[sub_tensor_ind * n * k + i * k + j] *
+                        right_data[sub_tensor_ind * m * k + l * k + j]
                     );
 
                     // G_right += L^T * G_out
-                    right->grads[sub_tensor_ind * m * k + l * k + j] += (
-                        out->grads[sub_tensor_ind * n * k + i * k + j] * 
-                        left->data[sub_tensor_ind * n * m + i * m + l]
+                    right_grads[sub_tensor_ind * m * k + l * k + j] += (
+                        out_grads[sub_tensor_ind * n * k + i * k + j] * 
+                        left_data[sub_tensor_ind * n * m + i * m + l]
                     );
                 }
             }
@@ -108,11 +116,13 @@ void mmul_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
 TensorHandle relu(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * input->num_dims, alignof(size_t));
     memcpy(result_dims, input->dims, sizeof(size_t) * input->num_dims);
-    TensorHandle result = tensor_zeroes(input->num_dims, result_dims, false, arena);
+    TensorHandle result = tensor_zeroes(input->dtype, input->num_dims, result_dims, false, arena);
     size_t n = tensor_size(result);
 
+    float *input_data = (float*)input->data;
+    float *result_data = (float*)result->data;
     for (size_t i = 0; i < n; ++i) {
-        result->data[i] = std::max(0.0f, input->data[i]);
+        result_data[i] = std::max(0.0f, input_data[i]);
     }
 
     update_context_new_op(ctx, {input}, OperationType::RELU, result);
@@ -122,9 +132,12 @@ TensorHandle relu(TensorHandle input, ArenaAllocatorHandle arena, ComputationCon
 void relu_backward(TensorHandle input, TensorHandle out) {
     size_t n = tensor_size(out);
 
+    float *input_data = (float*)input->data;
+    float *input_grads = (float*)input->grads;
+    float *out_grads = (float*)out->grads;
     for (size_t i = 0; i < n; ++i) {
-        if (input->data[i] >= 0) {
-            input->grads[i] += out->grads[i];
+        if (input_data[i] >= 0) {
+            input_grads[i] += out_grads[i];
         }
     }
 }
@@ -132,18 +145,20 @@ void relu_backward(TensorHandle input, TensorHandle out) {
 TensorHandle softmax(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * input->num_dims, alignof(size_t));
     memcpy(result_dims, input->dims, sizeof(size_t) * input->num_dims);
-    TensorHandle result = tensor_zeroes(input->num_dims, result_dims, false, arena);
+    TensorHandle result = tensor_zeroes(input->dtype, input->num_dims, result_dims, false, arena);
     size_t num_sub_tensors = tensor_num_sub_tensors(input, 1);
     size_t n = result->dims[result->num_dims - 1];
 
+    float *input_data = (float*)input->data;
+    float *result_data = (float*)result->data;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         float denominator = 0;
         for (size_t i = 0; i < n; ++i) {
-            result->data[sub_tensor_ind * n + i] = std::exp(input->data[sub_tensor_ind * n + i]);
-            denominator += std::exp(input->data[sub_tensor_ind * n + i]);
+            result_data[sub_tensor_ind * n + i] = std::exp(input_data[sub_tensor_ind * n + i]);
+            denominator += std::exp(input_data[sub_tensor_ind * n + i]);
         }
         for (size_t i = 0; i < n; ++i) {
-            result->data[sub_tensor_ind * n + i] /= denominator;
+            result_data[sub_tensor_ind * n + i] /= denominator;
         }
     }
 
@@ -155,20 +170,23 @@ void softmax_backward(TensorHandle input, TensorHandle out) {
     size_t num_sub_tensors = tensor_num_sub_tensors(input, 1);
     size_t n = out->dims[out->num_dims - 1];
 
+    float *input_grads = (float*)input->grads;
+    float *out_data = (float*)out->data;
+    float *out_grads = (float*)out->grads;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
-            input->grads[sub_tensor_ind * n + i] += (
-                out->data[sub_tensor_ind * n + i] * (1.0 - out->data[sub_tensor_ind * n + i]) * 
-                out->grads[sub_tensor_ind * n + i]
+            input_grads[sub_tensor_ind * n + i] += (
+                out_data[sub_tensor_ind * n + i] * (1.0 - out_data[sub_tensor_ind * n + i]) * 
+                out_grads[sub_tensor_ind * n + i]
             );
 
             for (size_t j = 0; j < n; ++j) {
                 if (j == i) {
                     continue;
                 }
-                input->grads[sub_tensor_ind * n + i] += (
-                    -(out->data[sub_tensor_ind * n + i] * out->data[sub_tensor_ind * n + j]) * 
-                    out->grads[sub_tensor_ind * n + j]
+                input_grads[sub_tensor_ind * n + i] += (
+                    -(out_data[sub_tensor_ind * n + i] * out_data[sub_tensor_ind * n + j]) * 
+                    out_grads[sub_tensor_ind * n + j]
                 );
             }
         }
@@ -178,14 +196,17 @@ void softmax_backward(TensorHandle input, TensorHandle out) {
 TensorHandle cross_entropy(TensorHandle left, TensorHandle right, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (left->num_dims - 1), alignof(size_t));
     memcpy(result_dims, left->dims, sizeof(size_t) * (left->num_dims - 1));
-    TensorHandle result = tensor_zeroes(left->num_dims - 1, result_dims, false, arena);
+    TensorHandle result = tensor_zeroes(left->dtype, left->num_dims - 1, result_dims, false, arena);
 
     size_t num_sub_tensors = tensor_size(result);
     size_t n = left->dims[left->num_dims - 1];
+    float *right_data = (float*)right->data;
+    float *left_data = (float*)left->data;
+    float *result_data = (float*)result->data;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
-            if (right->data[sub_tensor_ind * n + i] == 1.0) {
-                result->data[sub_tensor_ind] = -std::log(left->data[sub_tensor_ind * n + i]);
+            if (right_data[sub_tensor_ind * n + i] == 1.0) {
+                result_data[sub_tensor_ind] = -std::log(left_data[sub_tensor_ind * n + i]);
             }
         }
     }
@@ -197,11 +218,15 @@ TensorHandle cross_entropy(TensorHandle left, TensorHandle right, ArenaAllocator
 void cross_entropy_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
     size_t num_sub_tensors = tensor_size(out);
     size_t n = left->dims[left->num_dims - 1];
+    float *right_data = (float*)right->data;
+    float *left_grads = (float*)left->grads;
+    float *left_data = (float*)left->data;
+    float *out_grads = (float*)out->grads;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
-            if (right->data[sub_tensor_ind * n + i] == 1.0) {
-                left->grads[sub_tensor_ind * n + i] += (
-                    -out->grads[sub_tensor_ind] / left->data[sub_tensor_ind * n + i]
+            if (right_data[sub_tensor_ind * n + i] == 1.0) {
+                left_grads[sub_tensor_ind * n + i] += (
+                    -out_grads[sub_tensor_ind] / left_data[sub_tensor_ind * n + i]
                 );
             }
         }
@@ -211,15 +236,17 @@ void cross_entropy_backward(TensorHandle left, TensorHandle right, TensorHandle 
 TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (input->num_dims - 1), alignof(size_t));
     memcpy(result_dims, input->dims, sizeof(size_t) * (input->num_dims - 1));
-    TensorHandle result = tensor_zeroes(input->num_dims - 1, result_dims, false, arena);
+    TensorHandle result = tensor_zeroes(input->dtype, input->num_dims - 1, result_dims, false, arena);
 
     size_t num_sub_tensors = tensor_size(result);
     size_t n = input->dims[input->num_dims - 1];
+    float *input_data = (float*)input->data;
+    float *result_data = (float*)result->data;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
-            result->data[sub_tensor_ind] += input->data[sub_tensor_ind * n + i];
+            result_data[sub_tensor_ind] += input_data[sub_tensor_ind * n + i];
         }
-        result->data[sub_tensor_ind] /= (float)n;
+        result_data[sub_tensor_ind] /= (float)n;
     }
 
     update_context_new_op(ctx, {input}, OperationType::MEAN, result);
@@ -229,9 +256,11 @@ TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena, ComputationCon
 void mean_backward(TensorHandle input, TensorHandle out) {
     size_t num_sub_tensors = tensor_size(out);
     size_t n = input->dims[input->num_dims - 1];
+    float *input_grads = (float*)input->grads;
+    float *out_grads = (float*)out->grads;
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
-            input->grads[sub_tensor_ind * n + i] += out->grads[sub_tensor_ind] / (float)n;
+            input_grads[sub_tensor_ind * n + i] += out_grads[sub_tensor_ind] / (float)n;
         }
     }
 }
@@ -240,10 +269,13 @@ void mean_backward(TensorHandle input, TensorHandle out) {
 TensorHandle addition(TensorHandle left, TensorHandle right, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * left->num_dims, alignof(size_t));
     memcpy(result_dims, left->dims, sizeof(size_t) * left->num_dims);
-    TensorHandle result = tensor_zeroes(left->num_dims, result_dims, false, arena);
+    TensorHandle result = tensor_zeroes(left->dtype, left->num_dims, result_dims, false, arena);
     size_t n = tensor_size(result);
+    float *left_data = (float*)left->data;
+    float *right_data = (float*)right->data;
+    float *result_data = (float*)result->data;
     for (size_t i = 0; i < n; ++i) {
-        result->data[i] = left->data[i] + right->data[i];
+        result_data[i] = left_data[i] + right_data[i];
     }
 
     update_context_new_op(ctx, {left, right}, OperationType::ADDITION, result);
@@ -252,9 +284,12 @@ TensorHandle addition(TensorHandle left, TensorHandle right, ArenaAllocatorHandl
 }
 void addition_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
     size_t n = tensor_size(out);
+    float *left_grads = (float*)left->grads;
+    float *right_grads = (float*)right->grads;
+    float *out_grads = (float*)out->grads;
     for (size_t i = 0; i < n; ++i) {
-        left->grads[i] += out->grads[i];
-        right->grads[i] += out->grads[i];
+        left_grads[i] += out_grads[i];
+        right_grads[i] += out_grads[i];
     }
 }
 
@@ -262,11 +297,15 @@ TensorHandle broadcast(TensorHandle input, size_t n, ArenaAllocatorHandle arena,
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (input->num_dims + 1), alignof(size_t));
     result_dims[0] = n;
     memcpy(result_dims + 1, input->dims, sizeof(size_t) * input->num_dims);
-    TensorHandle result = tensor_zeroes(input->num_dims + 1, result_dims, false, arena);
+    TensorHandle result = tensor_zeroes(input->dtype, input->num_dims + 1, result_dims, false, arena);
 
     size_t input_size = tensor_size(input);
     for (size_t i = 0; i < n; ++i) {
-        memcpy(result->data + (i * input_size), input->data, input_size * sizeof(float));
+        if (result->dtype == DType::FLOAT32) {
+            memcpy((float*)result->data + (i * input_size), input->data, input_size * sizeof(float));
+        } else { // result->dtype == DType::SIZE_T
+            memcpy((size_t*)result->data + (i * input_size), input->data, input_size * sizeof(size_t));
+        }
     }
 
     update_context_new_op(ctx, {input}, OperationType::BROADCAST, result);
@@ -276,9 +315,11 @@ TensorHandle broadcast(TensorHandle input, size_t n, ArenaAllocatorHandle arena,
 void broadcast_backward(TensorHandle input, TensorHandle out) {
     size_t n = out->dims[0];
     size_t input_size = tensor_size(input);
+    float *in_grads = (float*)input->grads;
+    float *out_grads = (float*)out->grads;
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = 0; j < input_size; ++j) {
-            input->grads[j] += out->grads[i * input_size + j];
+            in_grads[j] += out_grads[i * input_size + j];
         }
     }
 }
@@ -327,7 +368,7 @@ void backward_single(TensorHandle tensor, ComputationContextHandle ctx) {
 
 void backward(TensorHandle tensor, ComputationContextHandle ctx) {
     // TODO: assert dims = []
-    tensor->grads[0] = 1.0;
+    ((float*)(tensor->grads))[0] = 1.0;
     
     std::queue<TensorHandle> tensor_queue; 
     tensor_queue.push(tensor);
@@ -355,9 +396,11 @@ void backward(TensorHandle tensor, ComputationContextHandle ctx) {
 void optimize(std::vector<TensorHandle> &tensors, float beta) {
     for(auto tensor: tensors) {
         size_t n = tensor_size(tensor);
+        float *data = (float*)tensor->data;
+        float *grads = (float*)tensor->grads;
         for (size_t i = 0; i < n; ++i) {
-            tensor->data[i] -= tensor->grads[i] * beta;
-            tensor->grads[i] = 0;
+            data[i] -= grads[i] * beta;
+            grads[i] = 0;
         }
     } 
 }

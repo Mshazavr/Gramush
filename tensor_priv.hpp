@@ -6,7 +6,8 @@ struct Tensor {
     size_t num_dims;
     size_t *dims;
     size_t *strides;
-    float *data;
-    float *grads;
+    void *data;
+    void *grads;
     bool learnable; 
+    DType dtype;
 };
