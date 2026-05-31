@@ -233,6 +233,68 @@ void cross_entropy_backward(TensorHandle left, TensorHandle right, TensorHandle 
     }
 }
 
+TensorHandle logsoftmax(TensorHandle left, TensorHandle right, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (left->num_dims - 1), alignof(size_t));
+    memcpy(result_dims, left->dims, sizeof(size_t) * (left->num_dims - 1));
+    TensorHandle result = tensor_zeroes(left->dtype, left->num_dims - 1, result_dims, false, arena);
+
+    size_t num_sub_tensors = tensor_size(result);
+    size_t n = left->dims[left->num_dims - 1];
+    float *right_data = (float*)right->data;
+    float *left_data = (float*)left->data;
+    float *result_data = (float*)result->data;
+    for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
+        float denom = 0;
+        size_t target_ind = 0;
+        float max_exp = left_data[sub_tensor_ind * n];
+        for (size_t i = 1; i < n; ++i) {
+            max_exp = std::max(max_exp, left_data[sub_tensor_ind * n + i]);
+        }
+        for (size_t i = 0; i < n; ++i) {
+            denom += std::exp(left_data[sub_tensor_ind * n + i] - max_exp);
+            if (right_data[sub_tensor_ind * n + i] == 1.0) {
+                target_ind = i;
+            }
+        }
+        
+        result_data[sub_tensor_ind] = -left_data[sub_tensor_ind * n + target_ind] + max_exp + std::log(denom);
+    }
+
+    update_context_new_op(ctx, {left, right}, OperationType::LOGSOFTMAX, result);
+
+    return result;
+}
+void logsoftmax_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
+    size_t num_sub_tensors = tensor_size(out);
+    size_t n = left->dims[left->num_dims - 1];
+    float *right_data = (float*)right->data;
+    float *left_grads = (float*)left->grads;
+    float *left_data = (float*)left->data;
+    float *out_grads = (float*)out->grads;
+    for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
+        float denom = 0;
+        float max_exp = left_data[sub_tensor_ind * n];
+        for (size_t i = 1; i < n; ++i) {
+            max_exp = std::max(max_exp, left_data[sub_tensor_ind * n + i]);
+        }
+        for (size_t i = 0; i < n; ++i) {
+            denom += std::exp(left_data[sub_tensor_ind * n + i] - max_exp);
+        }
+        for (size_t i = 0; i < n; ++i) {
+            if (right_data[sub_tensor_ind * n + i] == 1.0) {
+                left_grads[sub_tensor_ind * n + i] += (
+                    out_grads[sub_tensor_ind] * (std::exp(left_data[sub_tensor_ind * n + i] - max_exp) / denom - 1.0)
+                );
+            }
+            else {
+                left_grads[sub_tensor_ind * n + i] += (
+                    out_grads[sub_tensor_ind] * (std::exp(left_data[sub_tensor_ind * n + i] - max_exp) / denom)
+                );
+            }
+        }
+    }
+}
+
 TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (input->num_dims - 1), alignof(size_t));
     memcpy(result_dims, input->dims, sizeof(size_t) * (input->num_dims - 1));
@@ -324,6 +386,13 @@ void broadcast_backward(TensorHandle input, TensorHandle out) {
     }
 }
 
+TensorHandle embedding(TensorHandle indices, TensorHandle vectors, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
+    return nullptr;
+}
+void embedding_backward(TensorHandle indices, TensorHandle vectors, TensorHandle out) {
+    
+}
+
 
 void backward_single(TensorHandle tensor, ComputationContextHandle ctx) {
     size_t opnode_h = ctx->tensor_in_edges[tensor].value();
@@ -347,6 +416,13 @@ void backward_single(TensorHandle tensor, ComputationContextHandle ctx) {
             tensor
         );
     }
+    else if (ctx->operation_nodes[opnode_h] == OperationType::LOGSOFTMAX) {
+        logsoftmax_backward(
+            ctx->operation_in_edges[opnode_h][0], 
+            ctx->operation_in_edges[opnode_h][1], 
+            tensor
+        );
+    }
     else if (ctx->operation_nodes[opnode_h] == OperationType::MEAN) {
         mean_backward(ctx->operation_in_edges[opnode_h][0], tensor);
     }
@@ -359,6 +435,13 @@ void backward_single(TensorHandle tensor, ComputationContextHandle ctx) {
     }
     else if (ctx->operation_nodes[opnode_h] == OperationType::BROADCAST) {
         broadcast_backward(ctx->operation_in_edges[opnode_h][0], tensor);
+    }
+    else if (ctx->operation_nodes[opnode_h] == OperationType::EMBEDDING) {
+        embedding_backward(
+            ctx->operation_in_edges[opnode_h][0], 
+            ctx->operation_in_edges[opnode_h][1], 
+            tensor
+        );
     }
     else {
         // TODO clean this up

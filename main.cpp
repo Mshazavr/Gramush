@@ -85,8 +85,9 @@ int main() {
                 ctx
             );
 
-            TensorHandle p = softmax(l4, tensors_arena, ctx);
-            TensorHandle loss = cross_entropy(p, data_slices[it_ind].second, tensors_arena, ctx);
+            //TensorHandle p = softmax(l4, tensors_arena, ctx);
+            //TensorHandle loss = cross_entropy(p, data_slices[it_ind].second, tensors_arena, ctx);
+            TensorHandle loss = logsoftmax(l4, data_slices[it_ind].second, tensors_arena, ctx);
 
             TensorHandle mean_loss = mean(loss, tensors_arena, ctx);
 
