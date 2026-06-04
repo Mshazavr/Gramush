@@ -8,6 +8,7 @@
 #include <optional>
 #include <cstring>
 #include "arena.hpp"
+#include "cuda_kernels/batch_mmul.hpp"
 
 struct ComputationContext {
     std::vector<OperationType> operation_nodes;
@@ -64,7 +65,19 @@ TensorHandle mmul(TensorHandle left, TensorHandle right, ArenaAllocatorHandle ar
     float *left_data = (float*)left->data;
     float *right_data = (float*)right->data;
     float *result_data = (float*)result->data;
+
+    #if false
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
+        
+        #if true
+        /*cuda_mmul(
+            left_data + sub_tensor_ind * n * m, 
+            right_data + sub_tensor_ind * m * k, 
+            result_data + sub_tensor_ind * n * k, 
+            n, m, k
+        );*/
+
+        #else
         for (size_t i = 0; i < n; ++i) {
             for (size_t j = 0; j < k; ++j) {
                 for (size_t l = 0; l < m; ++l) {
@@ -75,7 +88,11 @@ TensorHandle mmul(TensorHandle left, TensorHandle right, ArenaAllocatorHandle ar
                 }
             }
         }
+        #endif
     }
+    #else
+    cuda_batch_mmul(left_data, right_data, result_data, num_sub_tensors, n, m, k);
+    #endif
     
     update_context_new_op(ctx, {left, right}, OperationType::MMUL, result);
 

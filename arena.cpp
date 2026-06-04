@@ -32,7 +32,6 @@ void *arena_alloc(ArenaAllocatorHandle allocator, size_t n_bytes, size_t alignme
 
     void *result = allocator->next;
     allocator->next += n_bytes;
-    //std::cout << allocator << ": " << (float)uintptr_t(allocator->next - allocator->buffer) / (float)(allocator->size) << std::endl;
     return result;
 }
 

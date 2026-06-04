@@ -10,6 +10,7 @@
 const size_t ESTIM_BYTES = 1000000000;
 
 int main() {
+
     std::string train_img = "mnist/train-images.idx3-ubyte";
     std::string train_lbl = "mnist/train-labels.idx1-ubyte";
     std::string test_img  = "mnist/t10k-images.idx3-ubyte";
