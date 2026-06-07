@@ -4,7 +4,7 @@
 #include <assert.h>
 #include "helpers.hpp"
 
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 256
 
 __global__ void add(float *A, float *B, float *C, int N) {
     int work_index = blockIdx.x * blockDim.x + threadIdx.x;

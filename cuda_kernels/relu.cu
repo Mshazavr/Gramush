@@ -5,7 +5,7 @@
 #include <cmath>
 #include "helpers.hpp"
 
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 256
 
 __global__ void relu(float *A, int N) {
     int work_index = blockIdx.x * blockDim.x + threadIdx.x;
