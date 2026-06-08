@@ -468,14 +468,14 @@ void broadcast_backward(TensorHandle input, TensorHandle out) {
     float *in_grads = (float*)input->grads;
     float *out_grads = (float*)out->grads;
     
-    #if true
+    #if LESS_CUDA
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = 0; j < input_size; ++j) {
             in_grads[j] += out_grads[i * input_size + j];
         }
     }
     #else 
-    // TODO
+    cuda_reduce_add_vertical(out_grads, in_grads, n, input_size, 1.0f);
     #endif
 }
 
