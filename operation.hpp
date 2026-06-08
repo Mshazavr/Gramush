@@ -1,7 +1,9 @@
 #pragma once 
 
 #include <vector>
+#include <string>
 #include "tensor.hpp"
+#include "unordered_map"
 
 enum class OperationType {
     MMUL,
@@ -15,6 +17,8 @@ enum class OperationType {
     BROADCAST,
     EMBEDDING
 };
+
+using OperationMetadata = std::unordered_map<std::string, TensorHandle>;
 
 struct ComputationContext;
 

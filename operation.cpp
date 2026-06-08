@@ -6,12 +6,20 @@
 #include <cmath>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <cstring>
 #include "arena.hpp"
 #include "cuda_kernels/batch_mmul.hpp"
+#include "cuda_kernels/add.hpp"
+#include "cuda_kernels/logsoftmax.hpp"
+#include "cuda_kernels/reduce_add.hpp"
+#include "cuda_kernels/relu.hpp"
+
+#define LESS_CUDA false
 
 struct ComputationContext {
     std::vector<OperationType> operation_nodes;
+    std::vector<OperationMetadata> operation_metadata;
 
     std::unordered_map<TensorHandle, std::optional<size_t>> tensor_in_edges;
     std::unordered_map<TensorHandle, size_t> tensor_out_count; 
@@ -37,10 +45,12 @@ void update_context_new_op(
     ComputationContextHandle ctx, 
     std::initializer_list<TensorHandle> inputs, 
     OperationType opnode_t, 
-    TensorHandle output
+    TensorHandle output,
+    OperationMetadata op_metadata = OperationMetadata()
 ) {
     size_t opnode_h = ctx->operation_nodes.size();
     ctx->operation_nodes.push_back(opnode_t);
+    ctx->operation_metadata.push_back(op_metadata);
     ctx->tensor_in_edges[output] = opnode_h;
     ctx->operation_in_edges.push_back(inputs);
     for (auto tensor_h: inputs) {
@@ -144,9 +154,14 @@ TensorHandle relu(TensorHandle input, ArenaAllocatorHandle arena, ComputationCon
 
     float *input_data = (float*)input->data;
     float *result_data = (float*)result->data;
+    
+    #if LESS_CUDA
     for (size_t i = 0; i < n; ++i) {
         result_data[i] = std::max(0.0f, input_data[i]);
     }
+    #else
+    cuda_relu(input_data, result_data, n);
+    #endif
 
     update_context_new_op(ctx, {input}, OperationType::RELU, result);
 
@@ -158,11 +173,16 @@ void relu_backward(TensorHandle input, TensorHandle out) {
     float *input_data = (float*)input->data;
     float *input_grads = (float*)input->grads;
     float *out_grads = (float*)out->grads;
+
+    #if LESS_CUDA
     for (size_t i = 0; i < n; ++i) {
         if (input_data[i] >= 0) {
             input_grads[i] += out_grads[i];
         }
     }
+    #else
+    cuda_relu_backward(input_data, input_grads, out_grads, n);
+    #endif
 }
 
 TensorHandle softmax(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
@@ -260,12 +280,24 @@ TensorHandle logsoftmax(TensorHandle left, TensorHandle right, ArenaAllocatorHan
     size_t *result_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (left->num_dims - 1), alignof(size_t));
     memcpy(result_dims, left->dims, sizeof(size_t) * (left->num_dims - 1));
     TensorHandle result = tensor_zeroes(left->dtype, left->num_dims - 1, result_dims, false, arena);
+    
+    size_t *row_exp_sum_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (left->num_dims - 1), alignof(size_t));
+    memcpy(row_exp_sum_dims, left->dims, sizeof(size_t) * (left->num_dims - 1));
+    TensorHandle row_exp_sum = tensor_zeroes(left->dtype, left->num_dims - 1, row_exp_sum_dims, false, arena);
+    
+    size_t *row_max_dims = (size_t*)arena_alloc(arena, sizeof(size_t) * (left->num_dims - 1), alignof(size_t));
+    memcpy(row_max_dims, left->dims, sizeof(size_t) * (left->num_dims - 1));
+    TensorHandle row_max = tensor_zeroes(left->dtype, left->num_dims - 1, row_max_dims, false, arena);
 
     size_t num_sub_tensors = tensor_size(result);
     size_t n = left->dims[left->num_dims - 1];
     float *right_data = (float*)right->data;
     float *left_data = (float*)left->data;
     float *result_data = (float*)result->data;
+    float *row_exp_sum_data = (float*)row_exp_sum->data;
+    float *row_max_data = (float*)row_max->data;
+    
+    #if LESS_CUDA
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         float denom = 0;
         size_t target_ind = 0;
@@ -282,18 +314,27 @@ TensorHandle logsoftmax(TensorHandle left, TensorHandle right, ArenaAllocatorHan
         
         result_data[sub_tensor_ind] = -left_data[sub_tensor_ind * n + target_ind] + max_exp + std::log(denom);
     }
+    #else
+    cuda_logsoftmax(left_data, right_data, result_data, row_exp_sum_data, row_max_data, num_sub_tensors, n);
+    #endif
+    
+    OperationMetadata op_metadata = {{"row_exp_sum", row_exp_sum}, {"row_max", row_max}};
 
-    update_context_new_op(ctx, {left, right}, OperationType::LOGSOFTMAX, result);
+    update_context_new_op(ctx, {left, right}, OperationType::LOGSOFTMAX, result, op_metadata);
 
     return result;
 }
-void logsoftmax_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
+void logsoftmax_backward(TensorHandle left, TensorHandle right, TensorHandle out, TensorHandle row_exp_sum, TensorHandle row_max) {
     size_t num_sub_tensors = tensor_size(out);
     size_t n = left->dims[left->num_dims - 1];
     float *right_data = (float*)right->data;
     float *left_grads = (float*)left->grads;
     float *left_data = (float*)left->data;
     float *out_grads = (float*)out->grads;
+    float *row_exp_sum_data = (float*)row_exp_sum->data;
+    float *row_max_data = (float*)row_max->data;
+
+    #if false
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         float denom = 0;
         float max_exp = left_data[sub_tensor_ind * n];
@@ -316,6 +357,9 @@ void logsoftmax_backward(TensorHandle left, TensorHandle right, TensorHandle out
             }
         }
     }
+    #else
+    cuda_logsoftmax_backward(left_data, left_grads, right_data, out_grads, row_exp_sum_data, row_max_data, num_sub_tensors, n);
+    #endif
 }
 
 TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
@@ -327,12 +371,17 @@ TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena, ComputationCon
     size_t n = input->dims[input->num_dims - 1];
     float *input_data = (float*)input->data;
     float *result_data = (float*)result->data;
+
+    #if LESS_CUDA
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             result_data[sub_tensor_ind] += input_data[sub_tensor_ind * n + i];
         }
         result_data[sub_tensor_ind] /= (float)n;
     }
+    #else 
+    cuda_reduce_add(input_data, result_data, num_sub_tensors, n, 1.0f/((float)n));
+    #endif
 
     update_context_new_op(ctx, {input}, OperationType::MEAN, result);
 
@@ -343,11 +392,16 @@ void mean_backward(TensorHandle input, TensorHandle out) {
     size_t n = input->dims[input->num_dims - 1];
     float *input_grads = (float*)input->grads;
     float *out_grads = (float*)out->grads;
+
+    #if LESS_CUDA
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors; ++sub_tensor_ind) {
         for (size_t i = 0; i < n; ++i) {
             input_grads[sub_tensor_ind * n + i] += out_grads[sub_tensor_ind] / (float)n;
         }
     }
+    #else 
+    cuda_reduce_add_backward(input_grads, out_grads, num_sub_tensors, n, 1.0f / ((float)n));
+    #endif
 }
 
 
@@ -359,9 +413,14 @@ TensorHandle addition(TensorHandle left, TensorHandle right, ArenaAllocatorHandl
     float *left_data = (float*)left->data;
     float *right_data = (float*)right->data;
     float *result_data = (float*)result->data;
+    
+    #if LESS_CUDA
     for (size_t i = 0; i < n; ++i) {
         result_data[i] = left_data[i] + right_data[i];
     }
+    #else
+    cuda_add(left_data, right_data, result_data, n);
+    #endif
 
     update_context_new_op(ctx, {left, right}, OperationType::ADDITION, result);
 
@@ -372,10 +431,16 @@ void addition_backward(TensorHandle left, TensorHandle right, TensorHandle out) 
     float *left_grads = (float*)left->grads;
     float *right_grads = (float*)right->grads;
     float *out_grads = (float*)out->grads;
+    
+    #if LESS_CUDA
     for (size_t i = 0; i < n; ++i) {
         left_grads[i] += out_grads[i];
         right_grads[i] += out_grads[i];
     }
+    #else 
+    cuda_add(left_grads, out_grads, left_grads, n);
+    cuda_add(right_grads, out_grads, right_grads, n);
+    #endif
 }
 
 TensorHandle broadcast(TensorHandle input, size_t n, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
@@ -402,11 +467,16 @@ void broadcast_backward(TensorHandle input, TensorHandle out) {
     size_t input_size = tensor_size(input);
     float *in_grads = (float*)input->grads;
     float *out_grads = (float*)out->grads;
+    
+    #if true
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = 0; j < input_size; ++j) {
             in_grads[j] += out_grads[i * input_size + j];
         }
     }
+    #else 
+    // TODO
+    #endif
 }
 
 TensorHandle embedding(TensorHandle indices, TensorHandle vectors, ArenaAllocatorHandle arena, ComputationContextHandle ctx) {
@@ -443,7 +513,9 @@ void backward_single(TensorHandle tensor, ComputationContextHandle ctx) {
         logsoftmax_backward(
             ctx->operation_in_edges[opnode_h][0], 
             ctx->operation_in_edges[opnode_h][1], 
-            tensor
+            tensor,
+            ctx->operation_metadata[opnode_h]["row_exp_sum"],
+            ctx->operation_metadata[opnode_h]["row_max"]
         );
     }
     else if (ctx->operation_nodes[opnode_h] == OperationType::MEAN) {

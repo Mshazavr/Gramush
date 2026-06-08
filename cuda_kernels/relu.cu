@@ -7,24 +7,26 @@
 
 #define BLOCK_SIZE 256
 
-__global__ void relu(float *A, int N) {
+__global__ void relu(float *A, float *B, int N) {
     int work_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (work_index < N) {
-        A[work_index] = std::max(A[work_index], 0.0f);
+        B[work_index] = fmaxf(A[work_index], 0.0f);
     }
 }
 
-void cuda_relu(float *A, int N) {
-    float *gA;
+void cuda_relu(float *A, float *B, int N) {
+    float *gA, *gB;
     CUDA_CHECK(cudaMalloc(&gA, sizeof(float)*N));
+    CUDA_CHECK(cudaMalloc(&gB, sizeof(float)*N));
     CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float)*N, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(gB, B, sizeof(float)*N, cudaMemcpyHostToDevice));
 
     int gridDim = CEIL_DIV(N, BLOCK_SIZE);
-    relu<<<gridDim, BLOCK_SIZE>>>(gA, N);
+    relu<<<gridDim, BLOCK_SIZE>>>(gA, gB, N);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-    CUDA_CHECK(cudaMemcpy(A, gA, sizeof(float)*N, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(B, gB, sizeof(float)*N, cudaMemcpyDeviceToHost));
 }
 
 
