@@ -6,26 +6,17 @@
 
 #define BLOCK_SIZE 256
 
-__global__ void add(float *A, float *B, float *C, int N) {
+__global__ void add(float *A, float *B, float *C, int N, float alpha, float beta) {
     int work_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (work_index < N) {
-        C[work_index] = A[work_index] + B[work_index];
+        C[work_index] = alpha * A[work_index] + beta * B[work_index];
     }
 }
 
-void cuda_add(float *A, float *B, float *C, int N) {
-    float *gA, *gB, *gC;
-    CUDA_CHECK(cudaMalloc(&gA, sizeof(float)*N));
-    CUDA_CHECK(cudaMalloc(&gB, sizeof(float)*N));
-    CUDA_CHECK(cudaMalloc(&gC, sizeof(float)*N));
-
-    CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float)*N, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gB, B, sizeof(float)*N, cudaMemcpyHostToDevice));
-
+void cuda_add(float *A, float *B, float *C, int N, float alpha, float beta) {
     int gridDim = CEIL_DIV(N, BLOCK_SIZE);
-    add<<<gridDim, BLOCK_SIZE>>>(gA, gB, gC, N);
+    add<<<gridDim, BLOCK_SIZE>>>(A, B, C, N, alpha, beta);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-    CUDA_CHECK(cudaMemcpy(C, gC, sizeof(float)*N, cudaMemcpyDeviceToHost));
 }

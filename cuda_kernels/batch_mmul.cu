@@ -122,14 +122,6 @@ __global__ void batch_mmul(float* A, float* B, float* C, int batch_size, int M, 
 
 // TODO: the parameters already should be device pointers
 void cuda_batch_mmul(float *A, bool trans_a, float *B, bool trans_b, float *C, int batch_size, int M, int K, int N, float alpha, float beta) {
-    float *gA, *gB, *gC;
-    CUDA_CHECK(cudaMalloc(&gA, sizeof(float)*batch_size*M*K));
-    CUDA_CHECK(cudaMalloc(&gB, sizeof(float)*batch_size*K*N));
-    CUDA_CHECK(cudaMalloc(&gC, sizeof(float)*batch_size*M*N));
-
-    CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float)*batch_size*M*K, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gB, B, sizeof(float)*batch_size*K*N, cudaMemcpyHostToDevice));
-
     int gridDimX = CEIL_DIV(N, C_BLOCK_TILE_COLS);
     int gridDimY = CEIL_DIV(M, C_BLOCK_TILE_ROWS);
 
@@ -140,20 +132,18 @@ void cuda_batch_mmul(float *A, bool trans_a, float *B, bool trans_b, float *C, i
 
     switch ((int)trans_a + 2 * (int)trans_b) {
         case 0b00:
-            batch_mmul<false, false><<<gridDim, blockDim>>>(gA, gB, gC, batch_size, M, K, N, alpha, beta);
+            batch_mmul<false, false><<<gridDim, blockDim>>>(A, B, C, batch_size, M, K, N, alpha, beta);
             break;
         case 0b01:
-            batch_mmul<true, false><<<gridDim, blockDim>>>(gA, gB, gC, batch_size, M, K, N, alpha, beta);
+            batch_mmul<true, false><<<gridDim, blockDim>>>(A, B, C, batch_size, M, K, N, alpha, beta);
             break;
         case 0b10:
-            batch_mmul<false, true><<<gridDim, blockDim>>>(gA, gB, gC, batch_size, M, K, N, alpha, beta);
+            batch_mmul<false, true><<<gridDim, blockDim>>>(A, B, C, batch_size, M, K, N, alpha, beta);
             break;
         case 0b11:
-            batch_mmul<true, true><<<gridDim, blockDim>>>(gA, gB, gC, batch_size, M, K, N, alpha, beta);
+            batch_mmul<true, true><<<gridDim, blockDim>>>(A, B, C, batch_size, M, K, N, alpha, beta);
             break;
     }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-
-    CUDA_CHECK(cudaMemcpy(C, gC, sizeof(float)*batch_size*M*N, cudaMemcpyDeviceToHost));
 }

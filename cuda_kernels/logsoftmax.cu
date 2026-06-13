@@ -76,26 +76,11 @@ __global__ void logsoftmax(float *A, float *B, float *C, float* row_exp_sum, flo
 }
 
 void cuda_logsoftmax(float *A, float *B, float *C, float *row_exp_sum, float *row_max, int batch_size, int vec_size) {
-    float *gA, *gB, *gC, *g_row_exp_sum, *g_row_max;
-    CUDA_CHECK(cudaMalloc(&gA, sizeof(float) * batch_size * vec_size));
-    CUDA_CHECK(cudaMalloc(&gB, sizeof(float) * batch_size * vec_size));
-    CUDA_CHECK(cudaMalloc(&gC, sizeof(float) * batch_size));
-    CUDA_CHECK(cudaMalloc(&g_row_exp_sum, sizeof(float) * batch_size));
-    CUDA_CHECK(cudaMalloc(&g_row_max, sizeof(float) * batch_size));
-
-    CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float) * batch_size * vec_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gB, B, sizeof(float) * batch_size * vec_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_row_exp_sum, row_exp_sum, sizeof(float) * batch_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_row_max, row_max, sizeof(float) * batch_size, cudaMemcpyHostToDevice));
-
     dim3 gridDim(1, batch_size);
-    logsoftmax<<<gridDim, BLOCK_SIZE>>>(gA, gB, gC, g_row_exp_sum, g_row_max, batch_size, vec_size);
+    logsoftmax<<<gridDim, BLOCK_SIZE>>>(A, B, C, row_exp_sum, row_max, batch_size, vec_size);
+    
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-
-    CUDA_CHECK(cudaMemcpy(C, gC, sizeof(float) * batch_size, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(row_exp_sum, g_row_exp_sum, sizeof(float) * batch_size, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(row_max, g_row_max, sizeof(float) * batch_size, cudaMemcpyDeviceToHost));
 }
 
 
@@ -114,25 +99,8 @@ __global__ void logsoftmax_backward(float *A, float *A_grads, float *B, float *C
 
 
 void cuda_logsoftmax_backward(float *A, float *A_grads, float *B, float *C_grads, float *row_exp_sum, float *row_max, int batch_size, int vec_size) {
-    float *gA, *gA_grads, *gB, *gC_grads, *g_row_exp_sum, *g_row_max;
-    CUDA_CHECK(cudaMalloc(&gA, sizeof(float) * batch_size * vec_size));
-    CUDA_CHECK(cudaMalloc(&gA_grads, sizeof(float) * batch_size * vec_size));
-    CUDA_CHECK(cudaMalloc(&gB, sizeof(float) * batch_size * vec_size));
-    CUDA_CHECK(cudaMalloc(&gC_grads, sizeof(float) * batch_size));
-    CUDA_CHECK(cudaMalloc(&g_row_exp_sum, sizeof(float) * batch_size));
-    CUDA_CHECK(cudaMalloc(&g_row_max, sizeof(float) * batch_size));
-
-    CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float) * batch_size * vec_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gB, B, sizeof(float) * batch_size * vec_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gA_grads, A_grads, sizeof(float) * batch_size * vec_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gC_grads, C_grads, sizeof(float) * batch_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_row_exp_sum, row_exp_sum, sizeof(float) * batch_size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_row_max, row_max, sizeof(float) * batch_size, cudaMemcpyHostToDevice));
-
     dim3 gridDim(CEIL_DIV(vec_size, BLOCK_SIZE), batch_size);
-    logsoftmax_backward<<<gridDim, BLOCK_SIZE>>>(gA, gA_grads, gB, gC_grads, g_row_exp_sum, g_row_max, batch_size, vec_size);
+    logsoftmax_backward<<<gridDim, BLOCK_SIZE>>>(A, A_grads, B, C_grads, row_exp_sum, row_max, batch_size, vec_size);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-
-    CUDA_CHECK(cudaMemcpy(A_grads, gA_grads, sizeof(float) * batch_size * vec_size, cudaMemcpyDeviceToHost));
 }

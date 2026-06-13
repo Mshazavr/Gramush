@@ -10,4 +10,8 @@ struct Tensor {
     void *grads;
     bool learnable; 
     DType dtype;
+    MType mtype;
 };
+
+size_t dtype_sz(DType dtype);
+size_t dtype_al(DType dtype);

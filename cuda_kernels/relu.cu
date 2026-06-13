@@ -15,18 +15,11 @@ __global__ void relu(float *A, float *B, int N) {
 }
 
 void cuda_relu(float *A, float *B, int N) {
-    float *gA, *gB;
-    CUDA_CHECK(cudaMalloc(&gA, sizeof(float)*N));
-    CUDA_CHECK(cudaMalloc(&gB, sizeof(float)*N));
-    CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float)*N, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gB, B, sizeof(float)*N, cudaMemcpyHostToDevice));
-
     int gridDim = CEIL_DIV(N, BLOCK_SIZE);
-    relu<<<gridDim, BLOCK_SIZE>>>(gA, gB, N);
+    relu<<<gridDim, BLOCK_SIZE>>>(A, B, N);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-    CUDA_CHECK(cudaMemcpy(B, gB, sizeof(float)*N, cudaMemcpyDeviceToHost));
 }
 
 
@@ -40,19 +33,9 @@ __global__ void relu_backward(float *A, float *AG, float *BG, int N) {
 }
 
 void cuda_relu_backward(float *A, float *AG, float *BG, int N) {
-    float *gA, *gAG, *gBG;
-    CUDA_CHECK(cudaMalloc(&gA, sizeof(float)*N));
-    CUDA_CHECK(cudaMalloc(&gAG, sizeof(float)*N));
-    CUDA_CHECK(cudaMalloc(&gBG, sizeof(float)*N));
-    
-    CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float)*N, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gAG, AG, sizeof(float)*N, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gBG, BG, sizeof(float)*N, cudaMemcpyHostToDevice));
-
     int gridDim = CEIL_DIV(N, BLOCK_SIZE);
-    relu_backward<<<gridDim, BLOCK_SIZE>>>(gA, gAG, gBG, N);
+    relu_backward<<<gridDim, BLOCK_SIZE>>>(A, AG, BG, N);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-    CUDA_CHECK(cudaMemcpy(AG, gAG, sizeof(float)*N, cudaMemcpyDeviceToHost));
 }

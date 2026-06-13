@@ -2,17 +2,17 @@
 
 #include <cuda_runtime.h>
 
-#define CUDA_CHECK(expr_to_check) do {            \
-    cudaError_t result  = expr_to_check;          \
-    if(result != cudaSuccess)                     \
-    {                                             \
-        fprintf(stderr,                           \
-                "CUDA Runtime Error: %s:%i:%d = %s\n", \
-                __FILE__,                         \
-                __LINE__,                         \
-                result,\
-                cudaGetErrorString(result));      \
-    }                                             \
+#define CUDA_CHECK(expr_to_check) do {                         \
+    cudaError_t __cuda_check_macro_result  = expr_to_check;    \
+    if(__cuda_check_macro_result != cudaSuccess)               \
+    {                                                          \
+        fprintf(stderr,                                        \
+                "CUDA Runtime Error: %s:%i:%d = %s\n",         \
+                __FILE__,                                      \
+                __LINE__,                                      \
+                __cuda_check_macro_result,                     \
+                cudaGetErrorString(__cuda_check_macro_result));\
+    }                                                          \
 } while(0)
 
 

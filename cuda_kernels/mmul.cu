@@ -85,17 +85,8 @@ __global__ void mmul(float* A, float* B, float* C, int M, int K, int N)
     }
 }
 
-// TODO: the parameters already should be device pointers
+
 void cuda_mmul(float *A, float *B, float *C, int M, int K, int N) {
-
-    float *gA, *gB, *gC;
-    CUDA_CHECK(cudaMalloc(&gA, sizeof(float)*M*K));
-    CUDA_CHECK(cudaMalloc(&gB, sizeof(float)*K*N));
-    CUDA_CHECK(cudaMalloc(&gC, sizeof(float)*M*N));
-
-    CUDA_CHECK(cudaMemcpy(gA, A, sizeof(float)*M*K, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(gB, B, sizeof(float)*K*N, cudaMemcpyHostToDevice));
-
     int gridDimX = CEIL_DIV(N, C_BLOCK_TILE_COLS);
     int gridDimY = CEIL_DIV(M, C_BLOCK_TILE_ROWS);
 
@@ -104,9 +95,7 @@ void cuda_mmul(float *A, float *B, float *C, int M, int K, int N) {
     dim3 blockDim(C_BLOCK_TILE_COLS / C_THREAD_TILE_COLS, C_BLOCK_TILE_ROWS / C_THREAD_TILE_ROWS);
     dim3 gridDim(gridDimX, gridDimY);
 
-    mmul<<<gridDim, blockDim>>>(gA, gB, gC, M, K, N);
+    mmul<<<gridDim, blockDim>>>(A, B, C, M, K, N);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-
-    CUDA_CHECK(cudaMemcpy(C, gC, sizeof(float)*M*N, cudaMemcpyDeviceToHost));
 }

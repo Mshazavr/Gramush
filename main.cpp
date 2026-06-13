@@ -28,8 +28,8 @@ int main() {
     // print_mnist_image_float(full_data, true, 42); 
 
     ComputationContextHandle ctx = init_computation_context();
-    ArenaAllocatorHandle persistent_tensors_arena = arena_init(ESTIM_BYTES);
-    ArenaAllocatorHandle tensors_arena = arena_init(ESTIM_BYTES);
+    ArenaAllocatorHandle persistent_tensors_arena = arena_init(ESTIM_BYTES, ESTIM_BYTES);
+    ArenaAllocatorHandle tensors_arena = arena_init(ESTIM_BYTES, ESTIM_BYTES);
 
     const size_t batch_size = 1000;
     const size_t num_iterations = full_data.num_train_images / batch_size;
@@ -44,18 +44,18 @@ int main() {
     data_slices.reserve(num_iterations);
     for (size_t i = 0; i < num_iterations; ++i) {
         data_slices.push_back({
-            tensor_from_data(DType::FLOAT32, {batch_size, input_size}, false, full_data.images_train.data() + (i * batch_size * input_size), persistent_tensors_arena),
-            tensor_from_data(DType::FLOAT32, {batch_size, num_labels}, false, full_data.labels_train.data() + (i * batch_size * num_labels), persistent_tensors_arena)
+            tensor_from_data(MType::CUDA_DEVICE, DType::FLOAT32, {batch_size, input_size}, false, full_data.images_train.data() + (i * batch_size * input_size), persistent_tensors_arena),
+            tensor_from_data(MType::CUDA_DEVICE, DType::FLOAT32, {batch_size, num_labels}, false, full_data.labels_train.data() + (i * batch_size * num_labels), persistent_tensors_arena)
         });
     }
 
     // Learnable tensors
-    TensorHandle w1 = tensor_random(DType::FLOAT32, {input_size, 300}, true, persistent_tensors_arena);
-    TensorHandle b1 = tensor_random(DType::FLOAT32, {300}, true, persistent_tensors_arena);
-    TensorHandle w2 = tensor_random(DType::FLOAT32, {300, 100}, true, persistent_tensors_arena);
-    TensorHandle b2 = tensor_random(DType::FLOAT32, {100}, true, persistent_tensors_arena);
-    TensorHandle w3 = tensor_random(DType::FLOAT32, {100, num_labels}, true, persistent_tensors_arena);
-    TensorHandle b3 = tensor_random(DType::FLOAT32, {num_labels}, true, persistent_tensors_arena);
+    TensorHandle w1 = tensor_random(MType::CUDA_DEVICE, DType::FLOAT32, {input_size, 300}, true, persistent_tensors_arena);
+    TensorHandle b1 = tensor_random(MType::CUDA_DEVICE, DType::FLOAT32, {300}, true, persistent_tensors_arena);
+    TensorHandle w2 = tensor_random(MType::CUDA_DEVICE, DType::FLOAT32, {300, 100}, true, persistent_tensors_arena);
+    TensorHandle b2 = tensor_random(MType::CUDA_DEVICE, DType::FLOAT32, {100}, true, persistent_tensors_arena);
+    TensorHandle w3 = tensor_random(MType::CUDA_DEVICE, DType::FLOAT32, {100, num_labels}, true, persistent_tensors_arena);
+    TensorHandle b3 = tensor_random(MType::CUDA_DEVICE, DType::FLOAT32, {num_labels}, true, persistent_tensors_arena);
 
     std::vector<TensorHandle> learnable_tensors = {w1, b1, w2, b2, w3, b3};
     
@@ -68,7 +68,7 @@ int main() {
                 broadcast(b1, batch_size, tensors_arena, ctx), 
                 tensors_arena,
                 ctx
-            ); 
+            );
             TensorHandle z2 = relu(l2, tensors_arena, ctx);
 
             TensorHandle l3 = addition(
