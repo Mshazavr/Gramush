@@ -3,7 +3,7 @@
 #include "tensor.hpp"
 #include "operation.hpp"
 #include <cstring>
-#include "mnist_reader.cpp"
+#include "mnist_utils/mnist_reader.hpp"
 #include "arena.hpp"
 
 // TODO: estimate bytes dynamically based on model architecture
