@@ -1,3 +1,4 @@
+build/
 *.o
 mshon
 **/.DS_Store
