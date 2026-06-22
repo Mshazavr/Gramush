@@ -1,0 +1,15 @@
+CompileFlags:
+  Add:
+    - -I/usr/local/cuda/include
+    - --cuda-path=/usr/local/cuda
+  Remove:
+    - -arch=sm_86
+
+---
+If:
+  PathMatch: .*\.cu
+CompileFlags:
+  Add:
+    - -x
+    - cuda
+    - --cuda-gpu-arch=sm_86
