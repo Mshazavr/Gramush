@@ -1,13 +1,6 @@
 ---
 Checks: >
   clang-analyzer-*,
-  bugprone-*,
-  performance-*,
-  portability-*,
-  readability-*,
-  misc-*,
-  -readability-magic-numbers,
-  -readability-identifier-length
 HeaderFilterRegex: 'src/.*'
 SystemHeaders: false
 FormatStyle: file

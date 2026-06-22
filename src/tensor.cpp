@@ -82,10 +82,10 @@ TensorHandle tensor_random(MType mtype, DType dtype, size_t num_dims,
   size_t n = tensor_size(result);
 
   void *random_data_buffer;
-  if (mtype == MType::HOST) {
-    random_data_buffer = result->data;
-  } else { // mtype == MType::CUDA_DEVICE
+  if (mtype == MType::CUDA_DEVICE) {
     random_data_buffer = malloc(n * dtype_sz(dtype));
+  } else { // mtype == MType::HOST
+    random_data_buffer = result->data;
   }
 
   for (size_t i = 0; i < n; ++i) {
