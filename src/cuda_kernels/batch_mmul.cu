@@ -2,6 +2,7 @@
 #include <cuda_runtime_api.h>
 #include <memory.h>
 
+#include <cstdlib>
 #include <iostream>
 
 #include "helpers.hpp"
@@ -161,6 +162,9 @@ void cuda_batch_mmul(float *A, bool trans_a, float *B, bool trans_b, float *C,
     batch_mmul<true, true>
         <<<gridDim, blockDim>>>(A, B, C, batch_size, M, K, N, alpha, beta);
     break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
   CUDA_CHECK(cudaGetLastError());
   CUDA_CHECK(cudaDeviceSynchronize());

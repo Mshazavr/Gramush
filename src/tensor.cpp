@@ -8,19 +8,36 @@
 #include "cuda_kernels/helpers.hpp"
 #include "tensor_priv.hpp"
 
+namespace {
+
+constexpr unsigned int switch_pair(DType dtype, MType mtype) {
+  return (static_cast<unsigned int>(dtype) << 16) +
+         static_cast<unsigned int>(mtype);
+}
+
+} // namespace
+
 size_t dtype_sz(DType dtype) {
-  if (dtype == DType::FLOAT32) {
+  switch (dtype) {
+  case DType::FLOAT32:
     return sizeof(float);
-  } else { // dtype == DType::SIZE_T
+  case DType::SIZE_T:
     return sizeof(size_t);
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }
 
 size_t dtype_al(DType dtype) {
-  if (dtype == DType::FLOAT32) {
+  switch (dtype) {
+  case DType::FLOAT32:
     return alignof(float);
-  } else { // dtype == DType::SIZE_T
+  case DType::SIZE_T:
     return alignof(size_t);
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }
 
@@ -43,16 +60,22 @@ TensorHandle tensor_zeroes(MType mtype, DType dtype, size_t num_dims,
   result->dtype = dtype;
   result->mtype = mtype;
 
-  if (mtype == MType::HOST) {
+  switch (mtype) {
+  case MType::HOST:
     result->data =
         arena_alloc(allocator, dtype_sz(dtype) * num_elems, dtype_al(dtype));
     result->grads =
         arena_alloc(allocator, dtype_sz(dtype) * num_elems, dtype_al(dtype));
-  } else { // mtype == MType::CUDA_DEVICE
+    break;
+  case MType::CUDA_DEVICE:
     result->data = arena_cuda_alloc(allocator, dtype_sz(dtype) * num_elems,
                                     dtype_al(dtype));
     result->grads = arena_cuda_alloc(allocator, dtype_sz(dtype) * num_elems,
                                      dtype_al(dtype));
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   for (size_t i = 0; i < result->num_dims; ++i) {
@@ -81,27 +104,46 @@ TensorHandle tensor_random(MType mtype, DType dtype, size_t num_dims,
       tensor_zeroes(mtype, dtype, num_dims, dims, learnable, allocator);
   size_t n = tensor_size(result);
 
-  void *random_data_buffer;
-  if (mtype == MType::CUDA_DEVICE) {
-    random_data_buffer = malloc(n * dtype_sz(dtype));
-  } else { // mtype == MType::HOST
+  void *random_data_buffer = nullptr;
+  switch (mtype) {
+  case MType::HOST:
     random_data_buffer = result->data;
+    break;
+  case MType::CUDA_DEVICE:
+    random_data_buffer = malloc(n * dtype_sz(dtype));
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   for (size_t i = 0; i < n; ++i) {
-    if (dtype == DType::FLOAT32) {
+    switch (dtype) {
+    case DType::FLOAT32:
       ((float *)(random_data_buffer))[i] =
           (std::rand() / (float)RAND_MAX) * 0.2f - 0.1f;
-    } else { // dtype == DType::SIZE_T
+      break;
+    case DType::SIZE_T:
       ((size_t *)(random_data_buffer))[i] =
           (size_t)((std::rand() / (float)RAND_MAX) * 2.0f);
+      break;
+    default:
+      __builtin_unreachable();
+      exit(0);
     }
   }
 
-  if (mtype == MType::CUDA_DEVICE) {
+  switch (mtype) {
+  case MType::CUDA_DEVICE:
     CUDA_CHECK(cudaMemcpy(result->data, random_data_buffer, n * dtype_sz(dtype),
                           cudaMemcpyHostToDevice));
     free(random_data_buffer);
+    break;
+  case MType::HOST:
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   return result;
@@ -123,12 +165,18 @@ TensorHandle tensor_from_vector(MType mtype, DType dtype,
                                 ArenaAllocatorHandle allocator) {
   TensorHandle result = tensor_zeroes(mtype, dtype, dims, learnable, allocator);
   memcpy(result->data, data.data(), data.size() * sizeof(float));
-  if (mtype == MType::HOST) {
+  switch (mtype) {
+  case MType::HOST:
     memcpy(result->data, data.data(), data.size() * dtype_sz(dtype));
-  } else { // mtype == MType::CUDA_DEVICE
+    break;
+  case MType::CUDA_DEVICE:
     CUDA_CHECK(cudaMemcpy(result->data, data.data(),
                           data.size() * dtype_sz(dtype),
                           cudaMemcpyHostToDevice));
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
   return result;
 }
@@ -138,12 +186,18 @@ TensorHandle tensor_from_data(MType mtype, DType dtype,
                               bool learnable, const float *data,
                               ArenaAllocatorHandle allocator) {
   TensorHandle result = tensor_zeroes(mtype, dtype, dims, learnable, allocator);
-  if (mtype == MType::HOST) {
+  switch (mtype) {
+  case MType::HOST:
     memcpy(result->data, data, tensor_size(result) * dtype_sz(dtype));
-  } else { // mtype == MType::CUDA_DEVICE
+    break;
+  case MType::CUDA_DEVICE:
     CUDA_CHECK(cudaMemcpy(result->data, data,
                           tensor_size(result) * dtype_sz(dtype),
                           cudaMemcpyHostToDevice));
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
   return result;
 }
@@ -153,24 +207,26 @@ float tensor_at(TensorHandle tensor, const std::vector<size_t> &indices) {
   for (size_t i = 0; i < tensor->num_dims; ++i) {
     ind += tensor->strides[i] * indices[i];
   }
-  if (tensor->dtype == DType::FLOAT32) {
-    if (tensor->mtype == MType::HOST) {
-      return ((float *)tensor->data)[ind];
-    } else { // tensor->mtype == MType::CUDA_DEVICE
-      float tmp;
-      CUDA_CHECK(cudaMemcpy(&tmp, (float *)tensor->data + ind,
-                            dtype_sz(tensor->dtype), cudaMemcpyDeviceToHost));
-      return tmp;
-    }
-  } else { // tensor->dtype == DType::SIZE_T
-    if (tensor->mtype == MType::HOST) {
-      return ((size_t *)tensor->data)[ind];
-    } else { // tensor->mtype == MType::CUDA_DEVICE
-      float tmp;
-      CUDA_CHECK(cudaMemcpy(&tmp, (size_t *)tensor->data + ind,
-                            dtype_sz(tensor->dtype), cudaMemcpyDeviceToHost));
-      return tmp;
-    }
+  switch (switch_pair(tensor->dtype, tensor->mtype)) {
+  case switch_pair(DType::FLOAT32, MType::HOST):
+    return ((float *)tensor->data)[ind];
+  case switch_pair(DType::FLOAT32, MType::CUDA_DEVICE): {
+    float tmp;
+    CUDA_CHECK(cudaMemcpy(&tmp, (float *)tensor->data + ind,
+                          dtype_sz(tensor->dtype), cudaMemcpyDeviceToHost));
+    return tmp;
+  }
+  case switch_pair(DType::SIZE_T, MType::HOST):
+    return ((size_t *)tensor->data)[ind];
+  case switch_pair(DType::SIZE_T, MType::CUDA_DEVICE): {
+    float tmp;
+    CUDA_CHECK(cudaMemcpy(&tmp, (size_t *)tensor->data + ind,
+                          dtype_sz(tensor->dtype), cudaMemcpyDeviceToHost));
+    return tmp;
+  }
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }
 

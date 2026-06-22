@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <cstring>
 
 #include "arena.hpp"
@@ -25,7 +26,8 @@ TensorHandle mmul(TensorHandle left, TensorHandle right,
   float *right_data = (float *)right->data;
   float *result_data = (float *)result->data;
 
-  if (result->mtype == MType::HOST) {
+  switch (result->mtype) {
+  case MType::HOST:
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors;
          ++sub_tensor_ind) {
       for (size_t i = 0; i < n; ++i) {
@@ -38,9 +40,14 @@ TensorHandle mmul(TensorHandle left, TensorHandle right,
         }
       }
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_batch_mmul(left_data, false, right_data, false, result_data,
                     num_sub_tensors, n, m, k, 1.0, 0.0);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   update_context_new_op(ctx, {left, right}, OperationType::MMUL, result);
@@ -60,7 +67,8 @@ void mmul_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
   float *right_grads = (float *)right->grads;
   float *out_grads = (float *)out->grads;
 
-  if (left->mtype == MType::HOST) {
+  switch (left->mtype) {
+  case MType::HOST:
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors;
          ++sub_tensor_ind) {
       for (size_t i = 0; i < n; ++i) {
@@ -79,10 +87,15 @@ void mmul_backward(TensorHandle left, TensorHandle right, TensorHandle out) {
         }
       }
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_batch_mmul(out_grads, false, right_data, true, left_grads,
                     num_sub_tensors, n, k, m, 1.0, 1.0);
     cuda_batch_mmul(left_data, true, out_grads, false, right_grads,
                     num_sub_tensors, m, n, k, 1.0, 1.0);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }

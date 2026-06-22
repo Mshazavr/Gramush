@@ -1,5 +1,6 @@
 #include <cuda_runtime_api.h>
 
+#include <cstdlib>
 #include <cstring>
 
 #include "arena.hpp"
@@ -19,28 +20,46 @@ TensorHandle broadcast(TensorHandle input, size_t n, ArenaAllocatorHandle arena,
 
   size_t input_size = tensor_size(input);
 
-  if (result->mtype == MType::HOST) {
+  switch (result->mtype) {
+  case MType::HOST:
     for (size_t i = 0; i < n; ++i) {
-      if (result->dtype == DType::FLOAT32) {
+      switch (result->dtype) {
+      case DType::FLOAT32:
         memcpy((float *)result->data + (i * input_size), input->data,
                input_size * sizeof(float));
-      } else { // result->dtype == DType::SIZE_T
+        break;
+      case DType::SIZE_T:
         memcpy((size_t *)result->data + (i * input_size), input->data,
                input_size * sizeof(size_t));
+        break;
+      default:
+        __builtin_unreachable();
+        exit(0);
       }
     }
-  } else { // result->mtype == MType::CUDA_DEVICE
+    break;
+  case MType::CUDA_DEVICE:
     for (size_t i = 0; i < n; ++i) {
-      if (result->dtype == DType::FLOAT32) {
+      switch (result->dtype) {
+      case DType::FLOAT32:
         CUDA_CHECK(cudaMemcpy((float *)result->data + (i * input_size),
                               input->data, input_size * sizeof(float),
                               cudaMemcpyDeviceToDevice));
-      } else { // result->dtype == DType::SIZE_T
+        break;
+      case DType::SIZE_T:
         CUDA_CHECK(cudaMemcpy((size_t *)result->data + (i * input_size),
                               input->data, input_size * sizeof(size_t),
                               cudaMemcpyDeviceToDevice));
+        break;
+      default:
+        __builtin_unreachable();
+        exit(0);
       }
     }
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   update_context_new_op(ctx, {input}, OperationType::BROADCAST, result);
@@ -54,13 +73,19 @@ void broadcast_backward(TensorHandle input, TensorHandle out) {
   float *in_grads = (float *)input->grads;
   float *out_grads = (float *)out->grads;
 
-  if (input->mtype == MType::HOST) {
+  switch (input->mtype) {
+  case MType::HOST:
     for (size_t i = 0; i < n; ++i) {
       for (size_t j = 0; j < input_size; ++j) {
         in_grads[j] += out_grads[i * input_size + j];
       }
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_reduce_add_vertical(out_grads, in_grads, n, input_size, 1.0f);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }

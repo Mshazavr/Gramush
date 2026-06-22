@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 #include "arena.hpp"
@@ -35,7 +36,8 @@ TensorHandle logsoftmax(TensorHandle left, TensorHandle right,
   float *row_exp_sum_data = (float *)row_exp_sum->data;
   float *row_max_data = (float *)row_max->data;
 
-  if (result->mtype == MType::HOST) {
+  switch (result->mtype) {
+  case MType::HOST:
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors;
          ++sub_tensor_ind) {
       float denom = 0;
@@ -55,9 +57,14 @@ TensorHandle logsoftmax(TensorHandle left, TensorHandle right,
           -left_data[sub_tensor_ind * n + target_ind] + max_exp +
           std::log(denom);
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_logsoftmax(left_data, right_data, result_data, row_exp_sum_data,
                     row_max_data, num_sub_tensors, n);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   OperationMetadata op_metadata = {{"row_exp_sum", row_exp_sum},
@@ -81,7 +88,8 @@ void logsoftmax_backward(TensorHandle left, TensorHandle right,
   float *row_exp_sum_data = (float *)row_exp_sum->data;
   float *row_max_data = (float *)row_max->data;
 
-  if (left->mtype == MType::HOST) {
+  switch (left->mtype) {
+  case MType::HOST:
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors;
          ++sub_tensor_ind) {
       float denom = 0;
@@ -105,9 +113,14 @@ void logsoftmax_backward(TensorHandle left, TensorHandle right,
         }
       }
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_logsoftmax_backward(left_data, left_grads, right_data, out_grads,
                              row_exp_sum_data, row_max_data, num_sub_tensors,
                              n);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }

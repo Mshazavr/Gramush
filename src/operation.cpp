@@ -1,5 +1,6 @@
 #include <cuda_runtime_api.h>
 
+#include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <queue>
@@ -22,6 +23,53 @@ struct ComputationContext {
   std::unordered_map<TensorHandle, size_t> tensor_out_count;
   std::vector<std::vector<TensorHandle>> operation_in_edges;
 };
+
+namespace {
+
+void backward_single(TensorHandle tensor, ComputationContextHandle ctx) {
+  size_t opnode_h = ctx->tensor_in_edges[tensor].value();
+  switch (ctx->operation_nodes[opnode_h]) {
+  case OperationType::MMUL:
+    mmul_backward(ctx->operation_in_edges[opnode_h][0],
+                  ctx->operation_in_edges[opnode_h][1], tensor);
+    break;
+  case OperationType::RELU:
+    relu_backward(ctx->operation_in_edges[opnode_h][0], tensor);
+    break;
+  case OperationType::SOFTMAX:
+    softmax_backward(ctx->operation_in_edges[opnode_h][0], tensor);
+    break;
+  case OperationType::CROSS_ENTROPY:
+    cross_entropy_backward(ctx->operation_in_edges[opnode_h][0],
+                           ctx->operation_in_edges[opnode_h][1], tensor);
+    break;
+  case OperationType::LOGSOFTMAX:
+    logsoftmax_backward(ctx->operation_in_edges[opnode_h][0],
+                        ctx->operation_in_edges[opnode_h][1], tensor,
+                        ctx->operation_metadata[opnode_h]["row_exp_sum"],
+                        ctx->operation_metadata[opnode_h]["row_max"]);
+    break;
+  case OperationType::MEAN:
+    mean_backward(ctx->operation_in_edges[opnode_h][0], tensor);
+    break;
+  case OperationType::ADDITION:
+    addition_backward(ctx->operation_in_edges[opnode_h][0],
+                      ctx->operation_in_edges[opnode_h][1], tensor);
+    break;
+  case OperationType::BROADCAST:
+    broadcast_backward(ctx->operation_in_edges[opnode_h][0], tensor);
+    break;
+  case OperationType::EMBEDDING:
+    embedding_backward(ctx->operation_in_edges[opnode_h][0],
+                       ctx->operation_in_edges[opnode_h][1], tensor);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
+  }
+}
+
+} // namespace
 
 ComputationContextHandle init_computation_context() {
   ComputationContextHandle result = new ComputationContext();
@@ -49,47 +97,21 @@ void update_context_new_op(ComputationContextHandle ctx,
   }
 }
 
-void backward_single(TensorHandle tensor, ComputationContextHandle ctx) {
-  size_t opnode_h = ctx->tensor_in_edges[tensor].value();
-  if (ctx->operation_nodes[opnode_h] == OperationType::MMUL) {
-    mmul_backward(ctx->operation_in_edges[opnode_h][0],
-                  ctx->operation_in_edges[opnode_h][1], tensor);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::RELU) {
-    relu_backward(ctx->operation_in_edges[opnode_h][0], tensor);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::SOFTMAX) {
-    softmax_backward(ctx->operation_in_edges[opnode_h][0], tensor);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::CROSS_ENTROPY) {
-    cross_entropy_backward(ctx->operation_in_edges[opnode_h][0],
-                           ctx->operation_in_edges[opnode_h][1], tensor);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::LOGSOFTMAX) {
-    logsoftmax_backward(ctx->operation_in_edges[opnode_h][0],
-                        ctx->operation_in_edges[opnode_h][1], tensor,
-                        ctx->operation_metadata[opnode_h]["row_exp_sum"],
-                        ctx->operation_metadata[opnode_h]["row_max"]);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::MEAN) {
-    mean_backward(ctx->operation_in_edges[opnode_h][0], tensor);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::ADDITION) {
-    addition_backward(ctx->operation_in_edges[opnode_h][0],
-                      ctx->operation_in_edges[opnode_h][1], tensor);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::BROADCAST) {
-    broadcast_backward(ctx->operation_in_edges[opnode_h][0], tensor);
-  } else if (ctx->operation_nodes[opnode_h] == OperationType::EMBEDDING) {
-    embedding_backward(ctx->operation_in_edges[opnode_h][0],
-                       ctx->operation_in_edges[opnode_h][1], tensor);
-  } else {
-    // TODO clean this up
-    exit(0);
-  }
-}
-
 void backward(TensorHandle tensor, ComputationContextHandle ctx) {
   // TODO: assert dims = []
-  if (tensor->mtype == MType::HOST) {
+  switch (tensor->mtype) {
+  case MType::HOST:
     ((float *)(tensor->grads))[0] = 1.0;
-  } else { // tensor->mtype == MType::CUDA_DEVICE
+    break;
+  case MType::CUDA_DEVICE: {
     float tmp = 1.0f;
     CUDA_CHECK(cudaMemcpy(tensor->grads, &tmp, dtype_sz(tensor->dtype),
                           cudaMemcpyHostToDevice));
+    break;
+  }
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   std::queue<TensorHandle> tensor_queue;
@@ -121,14 +143,20 @@ void optimize(std::vector<TensorHandle> &tensors, float beta) {
     float *data = (float *)tensor->data;
     float *grads = (float *)tensor->grads;
 
-    if (tensor->mtype == MType::HOST) {
+    switch (tensor->mtype) {
+    case MType::HOST:
       for (size_t i = 0; i < n; ++i) {
         data[i] -= grads[i] * beta;
         grads[i] = 0;
       }
-    } else { // tensor->mtype == MType::CUDA_DEVICE
+      break;
+    case MType::CUDA_DEVICE:
       cuda_add(data, grads, data, n, 1.0, -beta);
       CUDA_CHECK(cudaMemset(grads, 0.0f, n * dtype_sz(tensor->dtype)));
+      break;
+    default:
+      __builtin_unreachable();
+      exit(0);
     }
   }
 }

@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <cstring>
 
 #include "arena.hpp"
@@ -18,7 +19,8 @@ TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena,
   float *input_data = (float *)input->data;
   float *result_data = (float *)result->data;
 
-  if (result->mtype == MType::HOST) {
+  switch (result->mtype) {
+  case MType::HOST:
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors;
          ++sub_tensor_ind) {
       for (size_t i = 0; i < n; ++i) {
@@ -26,9 +28,14 @@ TensorHandle mean(TensorHandle input, ArenaAllocatorHandle arena,
       }
       result_data[sub_tensor_ind] /= (float)n;
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_reduce_add(input_data, result_data, num_sub_tensors, n,
                     1.0f / ((float)n));
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   update_context_new_op(ctx, {input}, OperationType::MEAN, result);
@@ -42,7 +49,8 @@ void mean_backward(TensorHandle input, TensorHandle out) {
   float *input_grads = (float *)input->grads;
   float *out_grads = (float *)out->grads;
 
-  if (input->mtype == MType::HOST) {
+  switch (input->mtype) {
+  case MType::HOST:
     for (size_t sub_tensor_ind = 0; sub_tensor_ind < num_sub_tensors;
          ++sub_tensor_ind) {
       for (size_t i = 0; i < n; ++i) {
@@ -50,8 +58,13 @@ void mean_backward(TensorHandle input, TensorHandle out) {
             out_grads[sub_tensor_ind] / (float)n;
       }
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_reduce_add_backward(input_grads, out_grads, num_sub_tensors, n,
                              1.0f / ((float)n));
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }

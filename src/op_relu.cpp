@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 
 #include "arena.hpp"
@@ -17,12 +18,18 @@ TensorHandle relu(TensorHandle input, ArenaAllocatorHandle arena,
   float *input_data = (float *)input->data;
   float *result_data = (float *)result->data;
 
-  if (result->mtype == MType::HOST) {
+  switch (result->mtype) {
+  case MType::HOST:
     for (size_t i = 0; i < n; ++i) {
       result_data[i] = std::max(0.0f, input_data[i]);
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_relu(input_data, result_data, n);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   update_context_new_op(ctx, {input}, OperationType::RELU, result);
@@ -37,13 +44,19 @@ void relu_backward(TensorHandle input, TensorHandle out) {
   float *input_grads = (float *)input->grads;
   float *out_grads = (float *)out->grads;
 
-  if (input->mtype == MType::HOST) {
+  switch (input->mtype) {
+  case MType::HOST:
     for (size_t i = 0; i < n; ++i) {
       if (input_data[i] >= 0) {
         input_grads[i] += out_grads[i];
       }
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_relu_backward(input_data, input_grads, out_grads, n);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }

@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <cstring>
 
 #include "arena.hpp"
@@ -17,12 +18,18 @@ TensorHandle addition(TensorHandle left, TensorHandle right,
   float *right_data = (float *)right->data;
   float *result_data = (float *)result->data;
 
-  if (result->mtype == MType::HOST) {
+  switch (result->mtype) {
+  case MType::HOST:
     for (size_t i = 0; i < n; ++i) {
       result_data[i] = left_data[i] + right_data[i];
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_add(left_data, right_data, result_data, n, 1.0, 1.0);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 
   update_context_new_op(ctx, {left, right}, OperationType::ADDITION, result);
@@ -37,13 +44,19 @@ void addition_backward(TensorHandle left, TensorHandle right,
   float *right_grads = (float *)right->grads;
   float *out_grads = (float *)out->grads;
 
-  if (left->mtype == MType::HOST) {
+  switch (left->mtype) {
+  case MType::HOST:
     for (size_t i = 0; i < n; ++i) {
       left_grads[i] += out_grads[i];
       right_grads[i] += out_grads[i];
     }
-  } else {
+    break;
+  case MType::CUDA_DEVICE:
     cuda_add(left_grads, out_grads, left_grads, n, 1.0, 1.0);
     cuda_add(right_grads, out_grads, right_grads, n, 1.0, 1.0);
+    break;
+  default:
+    __builtin_unreachable();
+    exit(0);
   }
 }
