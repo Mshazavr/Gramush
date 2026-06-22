@@ -13,13 +13,16 @@ TARGET = mshon
 
 CPP_SRCS = $(wildcard $(SRCDIR)/*.cpp) $(wildcard $(SRCDIR)/mnist_utils/*.cpp)
 CU_SRCS = $(wildcard $(SRCDIR)/cuda_kernels/*.cu)
+HEADER_SRCS = $(wildcard $(SRCDIR)/*.hpp) $(wildcard $(SRCDIR)/mnist_utils/*.hpp) $(wildcard $(SRCDIR)/cuda_kernels/*.hpp)
 
 CPP_OBJS = $(patsubst $(SRCDIR)/%.cpp,$(BUILDDIR)/%.o,$(CPP_SRCS))
 CU_OBJS = $(patsubst $(SRCDIR)/cuda_kernels/%.cu,$(BUILDDIR)/%.o,$(CU_SRCS))
 OBJS = $(CPP_OBJS) $(CU_OBJS)
 DEPS = $(OBJS:.o=.d)
 
-.PHONY: all clean
+TIDY_FLAGS = -std=c++23 -I$(SRCDIR) -isystem $(CUDA_HOME)/include
+
+.PHONY: all clean format format-check tidy
 all: $(TARGET)
 
 $(BUILDDIR):
@@ -38,5 +41,15 @@ $(BUILDDIR)/%.o: $(SRCDIR)/cuda_kernels/%.cu | $(BUILDDIR)
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
+
+format:
+	clang-format -i $(CPP_SRCS) $(CU_SRCS) $(HEADER_SRCS)
+
+format-check:
+	clang-format --dry-run --Werror $(CPP_SRCS) $(CU_SRCS) $(HEADER_SRCS)
+
+tidy:
+	@command -v clang-tidy >/dev/null || { echo "clang-tidy not found"; exit 1; }
+	clang-tidy $(CPP_SRCS) --warnings-as-errors='*' -- $(TIDY_FLAGS)
 
 -include $(DEPS)
